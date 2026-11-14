@@ -1,0 +1,30 @@
+name: Lamurina Multi-Stage Pipeline (developer -> test -> stage -> main)
+
+on:
+  push:
+    branches:
+      - developer
+      - test
+      - stage
+      - main
+  pull_request:
+    branches:
+      - developer
+      - test
+      - stage
+      - main
+
+jobs:
+  verify-and-stage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify Sitemap XMLs, Design Assets & Integrity
+        run: npm test
