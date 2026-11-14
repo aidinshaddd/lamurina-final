@@ -1,0 +1,10 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=${HOME}/public_html/
+    - /bin/mkdir -p ${DEPLOYPATH}
+    - /bin/mkdir -p ${DEPLOYPATH}assets/images
+    - /bin/mkdir -p ${DEPLOYPATH}assets/products
+    - /bin/cp -Rf public/* ${DEPLOYPATH}
+    - /bin/cp -f public/.htaccess ${DEPLOYPATH}.htaccess
+    - if [ -d "${DEPLOYPATH}wp-content/plugins" ]; then /bin/mkdir -p ${DEPLOYPATH}wp-content/plugins/lamurina-live-sync && /bin/cp -Rf deploy/lamurina-live-sync/* ${DEPLOYPATH}wp-content/plugins/lamurina-live-sync/; fi

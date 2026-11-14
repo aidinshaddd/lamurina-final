@@ -14,7 +14,11 @@ const requiredFiles = [
   'public/post-sitemap.xml',
   'public/category-sitemap.xml',
   'public/robots.txt',
-  'public/assets/images/logo.jpg'
+  'public/.htaccess',
+  'public/assets/images/logo.jpg',
+  '.cpanel.yml',
+  'DEPLOY.md',
+  'deploy/lamurina-live-sync/lamurina-live-sync.php'
 ];
 
 for (const rel of requiredFiles) {

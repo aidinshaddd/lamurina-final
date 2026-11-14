@@ -1,0 +1,56 @@
+# ======================================================================
+# Lamurina Luxury Lighting Gallery — Apache / LiteSpeed / cPanel Config
+# Domain: https://lamurinagallery.com/
+# ======================================================================
+
+DirectoryIndex index.html index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Force HTTPS in production
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP_HOST} ^(www\.)?lamurinagallery\.com$ [NC]
+  RewriteRule ^ https://lamurinagallery.com%{REQUEST_URI} [L,R=301]
+
+  # Allow WordPress Admin & REST API to continue working seamlessly
+  RewriteRule ^wp-admin(/.*)?$ - [L]
+  RewriteRule ^wp-login\.php$ - [L]
+  RewriteRule ^wp-json(/.*)?$ index.php [L]
+  RewriteRule ^wp-content(/.*)?$ - [L]
+  RewriteRule ^wp-includes(/.*)?$ - [L]
+
+  # Sitemap XML & Robots direct serving
+  RewriteRule ^(sitemap_index|page-sitemap|product-sitemap|product_cat-sitemap|post-sitemap|category-sitemap)\.xml$ - [L]
+  RewriteRule ^robots\.txt$ - [L]
+
+  # Serve existing static files and directories directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Route Lamurina V2 Sitemap SPA paths to index.html
+  RewriteRule ^(shop|studio|gallery|contact|chandelier-installation|service-area|architects|guide|blog|faq)(/.*)?$ /index.html [L]
+</IfModule>
+
+# Protect sensitive configuration files
+<FilesMatch "^(wp-config\.php|\.htaccess|\.env|\.cpanel\.yml)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# Security & Performance Headers
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  <FilesMatch "\.(webp|jpg|jpeg|png|svg|woff2|ttf)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
