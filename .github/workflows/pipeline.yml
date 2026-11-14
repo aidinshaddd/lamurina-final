@@ -23,6 +23,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
   actions: read
 
 jobs:
@@ -56,6 +58,12 @@ jobs:
           name: lamurina-deploy-${{ github.ref_name }}
           path: dist/*.zip
           retention-days: 30
+
+      - name: Upload GitHub Pages Artifact (on main)
+        if: github.ref_name == 'main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./public
 
   auto-promote:
     name: "2. Branch Auto-Promotion (${{ github.ref_name }})"
@@ -156,7 +164,21 @@ jobs:
           - **Repository:** `aidinshaddd/lamurina-final`
           - **Branch:** `${{ github.ref_name }}`
           - **Target Environment:** `${{ steps.env_target.outputs.env_name }}` (${{ steps.env_target.outputs.env_url }})
+          - **Live Cloud URL:** `https://aidinshaddd.github.io/lamurina-final/`
           - **Commit SHA:** `${{ github.sha }}`
           - **Verification:** ✅ All 6 XML Sitemaps, Design V2 & 12 Studio Product Photos Verified
           - **Artifacts Ready:** `lamurina-public_html.zip` & `lamurina-live-sync.zip`
           EOF
+
+  deploy-github-pages:
+    name: "4. Publish Live to GitHub Pages (main)"
+    needs: verify-and-package
+    if: github.ref_name == 'main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
