@@ -1,184 +1,25 @@
-name: Lamurina Auto-Deploy Pipeline (developer -> test -> stage -> main)
-
+name: Lamurina static preview checks
 on:
   push:
-    branches:
-      - developer
-      - test
-      - stage
-      - main
+    branches: [developer, dev, test, stage, main]
   pull_request:
-    branches:
-      - developer
-      - test
-      - stage
-      - main
   workflow_dispatch:
-    inputs:
-      promote_chain:
-        description: "Auto-promote branch chain (developer -> test -> stage -> main)"
-        required: false
-        default: true
-        type: boolean
-
 permissions:
-  contents: write
-  pages: write
-  id-token: write
-  actions: read
-
+  contents: read
+concurrency:
+  group: lamurina-static-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  verify-and-package:
-    name: "1. Verify Sitemap V2, Design & Package Artifacts"
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-
-      - name: Verify Sitemap XMLs, Design Tokens & 12 Studio Assets
-        run: npm test
-
-      - name: Build cPanel public_html & WordPress Live-Sync Bundles
+          node-version: '22'
+      - run: npm test
+      - name: Identify the production repository
         run: |
-          mkdir -p dist
-          (cd public && zip -r ../dist/lamurina-public_html.zip . .htaccess)
-          (cd deploy && zip -r ../dist/lamurina-live-sync.zip lamurina-live-sync)
-          ls -lh dist/
-
-      - name: Upload Deployment Bundles
-        uses: actions/upload-artifact@v4
-        with:
-          name: lamurina-deploy-${{ github.ref_name }}
-          path: dist/*.zip
-          retention-days: 30
-
-      - name: Upload GitHub Pages Artifact (on main)
-        if: github.ref_name == 'main'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./public
-
-  auto-promote:
-    name: "2. Branch Auto-Promotion (${{ github.ref_name }})"
-    needs: verify-and-package
-    if: github.event_name == 'workflow_dispatch' && inputs.promote_chain == true
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Full History
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Promote developer -> test -> stage -> main
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin
-          for TARGET in test stage main; do
-            git checkout -B "$TARGET" HEAD
-            git push origin "$TARGET" --force-with-lease
-          done
-
-  auto-deploy:
-    name: "3. Auto-Deploy Environment (${{ github.ref_name }})"
-    needs: verify-and-package
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    env:
-      FTP_SERVER: ${{ secrets.FTP_SERVER }}
-      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-      SSH_HOST: ${{ secrets.SSH_HOST }}
-      SSH_USER: ${{ secrets.SSH_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      SSH_TARGET_DIR: ${{ secrets.SSH_TARGET_DIR }}
-      LAMURINA_DEPLOY_TOKEN: ${{ secrets.LAMURINA_DEPLOY_TOKEN }}
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Determine Target Environment & Path
-        id: env_target
-        run: |
-          BRANCH="${{ github.ref_name }}"
-          if [ "$BRANCH" = "main" ]; then
-            echo "env_name=production" >> $GITHUB_OUTPUT
-            echo "env_url=https://lamurinagallery.com" >> $GITHUB_OUTPUT
-            echo "ftp_dir=/public_html/" >> $GITHUB_OUTPUT
-          elif [ "$BRANCH" = "stage" ]; then
-            echo "env_name=staging" >> $GITHUB_OUTPUT
-            echo "env_url=https://stage.lamurinagallery.com" >> $GITHUB_OUTPUT
-            echo "ftp_dir=/stage.lamurinagallery.com/" >> $GITHUB_OUTPUT
-          elif [ "$BRANCH" = "test" ]; then
-            echo "env_name=testing" >> $GITHUB_OUTPUT
-            echo "env_url=https://test.lamurinagallery.com" >> $GITHUB_OUTPUT
-            echo "ftp_dir=/test.lamurinagallery.com/" >> $GITHUB_OUTPUT
-          else
-            echo "env_name=development" >> $GITHUB_OUTPUT
-            echo "env_url=https://dev.lamurinagallery.com" >> $GITHUB_OUTPUT
-            echo "ftp_dir=/dev.lamurinagallery.com/" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Auto-Deploy via FTP/cPanel (if FTP Secrets configured)
-        if: env.FTP_SERVER != '' && env.FTP_USERNAME != '' && env.FTP_PASSWORD != ''
-        run: |
-          echo "Deploying ${{ github.ref_name }} to FTP ${{ steps.env_target.outputs.ftp_dir }}..."
-          sudo apt-get update && sudo apt-get install -y lftp
-          lftp -c "
-            set ssl:verify-certificate no;
-            set ftp:ssl-allow true;
-            open -u '$FTP_USERNAME','$FTP_PASSWORD' '$FTP_SERVER';
-            mirror --reverse --verbose --only-newer public/ '${{ steps.env_target.outputs.ftp_dir }}';
-            bye
-          "
-
-      - name: Auto-Deploy via SSH/Rsync (if SSH Secrets configured)
-        if: env.SSH_HOST != '' && env.SSH_USER != '' && env.SSH_PRIVATE_KEY != ''
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
-          TARGET_PATH="${SSH_TARGET_DIR:-/home/$SSH_USER/public_html/}"
-          rsync -avz --delete --exclude='wp-*' public/ "$SSH_USER@$SSH_HOST:$TARGET_PATH"
-
-      - name: Trigger WordPress Live-Sync Webhook (if LAMURINA_DEPLOY_TOKEN configured)
-        if: env.LAMURINA_DEPLOY_TOKEN != ''
-        run: |
-          curl -sS -X POST "https://lamurinagallery.com/wp-json/lamurina/v1/deploy" \
-            -H "Content-Type: application/json" \
-            -H "X-Lamurina-Deploy-Token: $LAMURINA_DEPLOY_TOKEN" \
-            -d "{\"branch\":\"${{ github.ref_name }}\",\"commit\":\"${{ github.sha }}\"}" || true
-
-      - name: Write Deployment Summary
-        run: |
-          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
-          ## 🚀 Lamurina Auto-Deploy Pipeline Summary
-          - **Repository:** `aidinshaddd/lamurina-final`
-          - **Branch:** `${{ github.ref_name }}`
-          - **Target Environment:** `${{ steps.env_target.outputs.env_name }}` (${{ steps.env_target.outputs.env_url }})
-          - **Live Cloud URL:** `https://aidinshaddd.github.io/lamurina-final/`
-          - **Commit SHA:** `${{ github.sha }}`
-          - **Verification:** ✅ All 6 XML Sitemaps, Design V2 & 12 Studio Product Photos Verified
-          - **Artifacts Ready:** `lamurina-public_html.zip` & `lamurina-live-sync.zip`
-          EOF
-
-  deploy-github-pages:
-    name: "4. Publish Live to GitHub Pages (main)"
-    needs: verify-and-package
-    if: github.ref_name == 'main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          echo 'This repository is a static preview. The live WordPress custom code is aidinshaddd/miladshabazi-lamurinagallery.com-. No host publication or branch force-promotion is performed here.' >> "$GITHUB_STEP_SUMMARY"
